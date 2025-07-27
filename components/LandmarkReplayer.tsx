@@ -62,10 +62,10 @@ const LandmarkReplayer: React.FC<LandmarkReplayerProps> = ({
         style={[
           styles.overlay,
           {
+            top: 30,
+            left: 30,
             width: overlaySize,
             height: overlaySize,
-            top: overlayPosition,
-            right: overlayPosition,
           },
         ]}
       >
@@ -165,44 +165,52 @@ const LandmarkReplayer: React.FC<LandmarkReplayerProps> = ({
               scene.add(line);
               connectionLines.push(line);
             });
+            let lastRenderTime = 0;
+            const frameRate = 1000 / 10; // ~10 FPS
 
-            const animate = () => {
+            const animate = (time: number) => {
+              if (time - lastRenderTime < frameRate) return;
+              lastRenderTime = time;
               requestAnimationFrame(animate);
               if (!landmarkIndexRef.current) return;
 
-              const lmData = landmarkIndexRef.current;
-              if (lmData.length === 33) {
-                // Update landmark positions
-                for (let i = 0; i < 33; i++) {
-                  const lm = lmData[i];
-                  landmarkMeshes[i].position.set(
-                    -lm.x,
-                    -lm.y,
-                    (lm.z || 0) * 0.5
-                  );
+              try {
+                const lmData = landmarkIndexRef.current;
+                if (lmData.length === 33) {
+                  // Update landmark positions
+                  for (let i = 0; i < 33; i++) {
+                    const lm = lmData[i];
+                    landmarkMeshes[i].position.set(
+                      -lm.x,
+                      -lm.y,
+                      (lm.z || 0) * 0.5
+                    );
+                  }
+
+                  // Update line geometry
+                  connections.forEach(([startIdx, endIdx], i) => {
+                    const line = connectionLines[i];
+                    const positions = new Float32Array([
+                      ...landmarkMeshes[startIdx].position.toArray(),
+                      ...landmarkMeshes[endIdx].position.toArray(),
+                    ]);
+                    line.geometry.setAttribute(
+                      "position",
+                      new THREE.BufferAttribute(positions, 3)
+                    );
+                    line.geometry.computeBoundingSphere();
+                    line.geometry.attributes.position.needsUpdate = true;
+                  });
                 }
 
-                // Update line geometry
-                connections.forEach(([startIdx, endIdx], i) => {
-                  const line = connectionLines[i];
-                  const positions = new Float32Array([
-                    ...landmarkMeshes[startIdx].position.toArray(),
-                    ...landmarkMeshes[endIdx].position.toArray(),
-                  ]);
-                  line.geometry.setAttribute(
-                    "position",
-                    new THREE.BufferAttribute(positions, 3)
-                  );
-                  line.geometry.computeBoundingSphere();
-                  line.geometry.attributes.position.needsUpdate = true;
-                });
+                renderer.render(scene, camera);
+                gl.endFrameEXP();
+              } catch (error) {
+                console.error("Error during rendering:", error);
               }
-
-              renderer.render(scene, camera);
-              gl.endFrameEXP();
             };
 
-            animate();
+            animate(0);
           }}
         />
       </View>
