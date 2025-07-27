@@ -31,40 +31,41 @@ export default function CameraFeed() {
 
   // Frame processing interval
   useEffect(() => {
+    let isActive = true;
     if (!cameraReady || !landmarkDetector.current) return;
 
     const interval = setInterval(async () => {
       try {
         const camera = cameraRef.current;
-        if (!camera) return;
+        if (!camera || !isActive) return;
 
         const photo = await camera.takePictureAsync({
-          // quality: 0.1,
           base64: true,
           skipProcessing: true,
           imageType: "jpg",
         });
 
-        if (photo.base64) {
+        if (photo.base64 && isActive) {
           if (!landmarkDetector.current) return;
           const detected = await landmarkDetector.current.detectLandmarks(
             photo.base64,
             photo.uri
           );
-          // console.log("Detected landmarks:", detected);
-
           const normalized = detected || [];
-
           setLandmarks(normalized);
-          // Update landmark objects in the 3D scene
           landmarkObjectsRef.current = normalized;
         }
       } catch (err) {
-        console.error("Error during frame processing:", err);
+        if (isActive) {
+          console.error("Error during frame processing:", err);
+        }
       }
     }, 10);
 
-    return () => clearInterval(interval);
+    return () => {
+      isActive = false;
+      clearInterval(interval);
+    };
   }, [cameraReady]);
 
   // Permissions flow
