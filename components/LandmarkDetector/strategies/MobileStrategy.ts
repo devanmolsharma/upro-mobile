@@ -8,11 +8,10 @@ import { Landmark, Strategy } from "./Strategy";
 // It uses TensorFlow.js with the React Native adapter (@tensorflow/tfjs-react-native)
 // to perform pose detection on mobile devices.
 export class MobileStrategy extends Strategy {
-  dispose(): Promise<void> {
+  dispose() {
     if (this.detector) {
       this.detector.dispose();
     }
-    return Promise.resolve();
   }
   private detector: poseDetection.PoseDetector | null = null;
 
@@ -62,7 +61,7 @@ export class MobileStrategy extends Strategy {
         poseDetection.SupportedModels.BlazePose,
         {
           runtime: "tfjs",
-          modelType: "full", // 'lite' is ideal for mobile performance
+          modelType: "heavy", // 'lite' is ideal for mobile performance
         }
       );
       console.log("Pose detector loaded successfully for Mobile");

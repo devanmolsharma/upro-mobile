@@ -5,11 +5,10 @@ import { decodeJpeg } from "@tensorflow/tfjs-react-native";
 import { Landmark, Strategy } from "./Strategy";
 
 export class WebStrategy extends Strategy {
-  dispose(): Promise<void> {
+  dispose() {
     if (this.detector) {
       this.detector.dispose();
     }
-    return Promise.resolve();
   }
   private detector: poseDetection.PoseDetector | null = null;
 

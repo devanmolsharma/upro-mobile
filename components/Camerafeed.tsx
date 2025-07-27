@@ -35,7 +35,7 @@ export default function CameraFeed({
   >([]); // Store final landmarks from all frames
   const [modelLoaded, setModelLoaded] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
-  const recordDuration = 5; // seconds
+  const recordDuration = 30; // seconds
   const [now, setNow] = useState(Date.now());
   const [recordingStartTime, setRecordingStartTime] = useState(Date.now());
 
@@ -112,7 +112,7 @@ export default function CameraFeed({
       await FileSystem.makeDirectoryAsync(frameDir, { intermediates: true });
 
       const durationMs = recordDuration * 1000;
-      const fps = 10; // Process 2 frames per second
+      const fps = 6; // Process 2 frames per second
       const interval = 1000 / fps;
       const totalFrames = Math.floor(durationMs / interval);
 

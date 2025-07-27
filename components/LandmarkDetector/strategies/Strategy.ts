@@ -27,6 +27,8 @@ export abstract class Strategy {
     imageTensor: tf.Tensor3D,
     conf: number
   ): Promise<Landmark[]>;
+
+  abstract dispose(): void;
 }
 
 export type Landmark = {
