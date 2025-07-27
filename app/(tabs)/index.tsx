@@ -1,6 +1,10 @@
 import AuthScreen from "@/components/AuthScreen";
+import TopNavbar from "@/components/TopNavBar";
 import { useAuth } from "@/contexts/AuthContext";
-import { ActivityIndicator, Text, View } from "react-native";
+import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import FontAwesome5 from "@expo/vector-icons/FontAwesome5";
 
 export default function HomeScreen() {
   const { user, loading } = useAuth();
@@ -19,24 +23,29 @@ export default function HomeScreen() {
   }
 
   return (
-    <View className="flex-1 bg-gray-50">
-      <View className="flex-1 justify-center items-center px-6">
-        <View className="bg-white p-8 rounded-lg shadow-lg mb-8">
-          <Text className="text-2xl font-bold text-center mb-4 text-gray-800">
-            Welcome! 🌿
-          </Text>
-          <Text className="text-center text-gray-600 mb-4">
-            You are successfully signed in!
-          </Text>
-          <Text className="text-center text-blue-600 font-medium">
-            {user.email}
-          </Text>
+    <SafeAreaView className="flex-1 bg-gray-50">
+      <TopNavbar />
+      <View className="flex-1 items-center px-6">
+        <View className=" flex items-center justify-center w-[80%] h-[60%] mt-20">
+          <View className="flex-row justify-between items-center w-full mb-4">
+            <View className="flex-row items-center">
+              <MaterialCommunityIcons
+                name="currency-usd"
+                size={24}
+                color="black"
+              />
+              <Text className="text-lg font-semibold italic">Balance</Text>
+            </View>
+            <TouchableOpacity className="flex-row items-center gap-1">
+              <FontAwesome5 name="user-friends" size={20} color="black" />
+              <Text className="text-lg font-semibold italic">COUNT</Text>
+            </TouchableOpacity>
+          </View>
+          <View className="w-full flex-1 flex items-center justify-center bg-white rounded-lg shadow-lg">
+            <Text>Div for avatar section.</Text>
+          </View>
         </View>
-        
-        <Text className="text-center text-gray-500 text-sm">
-          Check out the Profile tab to manage your account
-        </Text>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
