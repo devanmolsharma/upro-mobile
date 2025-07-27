@@ -48,7 +48,8 @@ export default function CameraFeed() {
         if (photo.base64) {
           if (!landmarkDetector.current) return;
           const detected = await landmarkDetector.current.detectLandmarks(
-            photo.base64
+            photo.base64,
+            photo.uri
           );
           // console.log("Detected landmarks:", detected);
 

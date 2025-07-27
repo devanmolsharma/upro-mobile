@@ -1,6 +1,7 @@
 import * as poseDetection from "@tensorflow-models/pose-detection";
 import * as tf from "@tensorflow/tfjs";
 import { decodeJpeg } from "@tensorflow/tfjs-react-native";
+import * as ImageManipulator from "expo-image-manipulator";
 import { Landmark, Strategy } from "./Strategy";
 
 // The MobileStrategy is designed to work in a React Native environment for both iOS and Android.
@@ -9,10 +10,23 @@ import { Landmark, Strategy } from "./Strategy";
 export class MobileStrategy extends Strategy {
   private detector: poseDetection.PoseDetector | null = null;
 
-  async parseImage(imageBase64: string): Promise<tf.Tensor3D | null> {
+  async parseImage(
+    imageBase64: string,
+    fileUri: string
+  ): Promise<tf.Tensor3D | null> {
     try {
+      const result = await ImageManipulator.manipulateAsync(
+        fileUri,
+        [{ resize: { width: 224, height: 224 } }],
+        {
+          base64: true,
+        }
+      );
+      if (!result.base64) {
+        throw new Error("Failed to get base64 from image manipulation");
+      }
       // Convert base64 to byte array
-      const byteCharacters = atob(imageBase64); // Replace with custom atob if in React Native
+      const byteCharacters = atob(result.base64); // Replace with custom atob if in React Native
       const byteNumbers = new Array(byteCharacters.length);
       for (let i = 0; i < byteCharacters.length; i++) {
         byteNumbers[i] = byteCharacters.charCodeAt(i);
@@ -25,11 +39,14 @@ export class MobileStrategy extends Strategy {
       // Resize to smaller resolution
       const targetHeight = 192;
       const targetWidth = 192;
-      imageTensor = tf.image.resizeBilinear(imageTensor, [targetHeight, targetWidth]);
+      imageTensor = tf.image.resizeBilinear(imageTensor, [
+        targetHeight,
+        targetWidth,
+      ]);
 
       return imageTensor;
     } catch (err) {
-      console.error('Error decoding image tensor:', err);
+      console.error("Error decoding image tensor:", err);
       return null;
     }
   }
@@ -52,7 +69,10 @@ export class MobileStrategy extends Strategy {
     }
   }
 
-  async detectLandmarks(imageTensor: tf.Tensor3D, conf: number): Promise<Landmark[]> {
+  async detectLandmarks(
+    imageTensor: tf.Tensor3D,
+    conf: number
+  ): Promise<Landmark[]> {
     if (!this.detector) {
       throw new Error("Pose detector not loaded");
     }

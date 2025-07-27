@@ -8,7 +8,10 @@ export abstract class Strategy {
    * @param imageBase64Url The base64 encoded image string.
    * @returns A Promise that resolves with a 3D Tensor representing the image, or null on failure.
    */
-  abstract parseImage(imageBase64Url: string): Promise<tf.Tensor3D | null>;
+  abstract parseImage(
+    imageBase64Url: string,
+    fileUri: string
+  ): Promise<tf.Tensor3D | null>;
 
   /**
    * Loads the BlazePose model detector.
@@ -23,7 +26,10 @@ export abstract class Strategy {
    * @param conf The minimum confidence score for a keypoint to be considered valid.
    * @returns A Promise that resolves with an array of filtered keypoints.
    */
-  abstract detectLandmarks(imageTensor: tf.Tensor3D, conf: number): Promise<Landmark[]>;
+  abstract detectLandmarks(
+    imageTensor: tf.Tensor3D,
+    conf: number
+  ): Promise<Landmark[]>;
 }
 
 export type Landmark = {
