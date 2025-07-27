@@ -1,17 +1,15 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { GLView } from "expo-gl";
-import { Renderer } from "expo-three";
 import { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Button,
   StyleSheet,
   Text,
-  View,
+  View
 } from "react-native";
-import * as THREE from "three";
 import { LandmarkDetector } from "./LandmarkDetector/loader";
 import { Landmark } from "./LandmarkDetector/strategies/Strategy";
+// If you use react-native-video-processing, import it:
+// import { ProcessingManager } from 'react-native-video-processing';
 
 export default function CameraFeed() {
   const [permission, requestPermission] = useCameraPermissions();
@@ -20,6 +18,8 @@ export default function CameraFeed() {
   const cameraRef = useRef<CameraView>(null);
   const landmarkDetector = useRef<LandmarkDetector | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [videoUri, setVideoUri] = useState<string | null>(null);
 
   // Load the ML model once
   useEffect(() => {
@@ -29,44 +29,56 @@ export default function CameraFeed() {
     });
   }, []);
 
-  // Frame processing interval
+  // Log isRecording state changes
   useEffect(() => {
-    let isActive = true;
-    if (!cameraReady || !landmarkDetector.current) return;
+    console.log('isRecording changed:', isRecording);
+  }, [isRecording]);
 
-    const interval = setInterval(async () => {
+  // Function to capture frames for 30 seconds at 2 fps
+  const handleCaptureFrames = async () => {
+    if (!cameraRef.current || !cameraReady) return;
+    setIsRecording(true);
+    const frames: any[] = [];
+    let elapsed = 0;
+    const intervalMs = 500;
+    const durationMs = 30000;
+    const maxFrames = Math.floor(durationMs / intervalMs);
+
+    const intervalId = setInterval(async () => {
+      if (!cameraRef.current) return;
       try {
-        const camera = cameraRef.current;
-        if (!camera || !isActive) return;
-
-        const photo = await camera.takePictureAsync({
-          base64: true,
-          skipProcessing: true,
-          imageType: "jpg",
-        });
-
-        if (photo.base64 && isActive) {
-          if (!landmarkDetector.current) return;
-          const detected = await landmarkDetector.current.detectLandmarks(
-            photo.base64,
-            photo.uri
-          );
-          const normalized = detected || [];
-          setLandmarks(normalized);
-          landmarkObjectsRef.current = normalized;
-        }
+        const photo = await cameraRef.current.takePictureAsync({ base64: true, skipProcessing: true });
+        frames.push(photo);
+        console.log(`Captured frame ${frames.length}`);
       } catch (err) {
-        if (isActive) {
-          console.error("Error during frame processing:", err);
-        }
+        console.error("Error capturing frame:", err);
       }
-    }, 10);
+      elapsed += intervalMs;
+      if (frames.length >= maxFrames) {
+        clearInterval(intervalId);
+        setIsRecording(false);
+        await processFrames(frames);
+      }
+    }, intervalMs);
+  };
 
-    return () => {
-      isActive = false;
-      clearInterval(interval);
-    };
-  }, [cameraReady]);
+  // Function to process frames
+  async function processFrames(frames: any[]) {
+    if (!landmarkDetector.current) {
+      console.error("LandmarkDetector not loaded");
+      return;
+    }
+    for (let i = 0; i < frames.length; i++) {
+      const photo = frames[i];
+      try {
+        const landmarks = await landmarkDetector.current.detectLandmarks(photo.base64, photo.uri);
+        console.log(`Frame ${i + 1}:`, landmarks);
+      } catch (err) {
+        console.error(`Error processing frame ${i + 1}:`, err);
+      }
+    }
+    console.log("Finished processing all frames.");
+  }
 
   // Permissions flow
   if (!permission) return <View />;
@@ -89,123 +101,15 @@ export default function CameraFeed() {
         ref={cameraRef}
         onCameraReady={() => setCameraReady(true)}
       />
-
-      {/* Status Overlay */}
-      <View style={styles.statusBar}>
-        {!cameraReady && (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#FFFFFF" />
-            <Text style={styles.loadingText}>Initializing</Text>
-          </View>
-        )}
-        <Text style={styles.landmarkCount}>
-          {landmarks.length} landmarks detected
-        </Text>
-      </View>
-
-      {/* 3D Visualization Panel */}
-      <View style={styles.visualizationPanel}>
-        <Text style={styles.panelTitle}>3D LANDMARKS</Text>
-        <GLView
-          style={styles.glView}
-          onContextCreate={async (gl) => {
-            // Setup Three.js renderer
-            const renderer = new Renderer({ gl });
-            renderer.setSize(gl.drawingBufferWidth, gl.drawingBufferHeight);
-
-            // Create scene
-            const scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x121212);
-
-            // Add coordinate axes
-            const axesHelper = new THREE.AxesHelper(0.5);
-            scene.add(axesHelper);
-
-            // Setup camera - better positioning
-            const camera = new THREE.PerspectiveCamera(
-              60, // Wider field of view
-              gl.drawingBufferWidth / gl.drawingBufferHeight,
-              0.01,
-              100
-            );
-            camera.position.set(0, 0, 1.5);
-            camera.lookAt(0, 0, 0);
-
-            // Add ambient light
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-            scene.add(ambientLight);
-
-            // Add directional light
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            directionalLight.position.set(0.5, 0.5, 1);
-            scene.add(directionalLight);
-
-            // Store landmark objects
-            const landmarkObjects: THREE.Mesh[] = [];
-
-            // Animation loop
-            const animate = () => {
-              requestAnimationFrame(animate);
-
-              // Update landmarks
-              if (landmarkObjectsRef.current.length > 0) {
-                // Clear previous landmarks
-                landmarkObjects.forEach((obj) => scene.remove(obj));
-                landmarkObjects.length = 0;
-
-                // Create new landmarks with better visualization
-                landmarkObjectsRef.current.forEach((lm) => {
-                  const z = lm.z || 0;
-
-                  // More visible size
-                  const size = 0.03 + z * 0.02;
-
-                  // Depth-based coloring
-                  const depthColor = new THREE.Color(
-                    1 - Math.min(1, Math.abs(z) * 2),
-                    Math.min(1, 0.8 - Math.abs(z) * 0.5),
-                    0.4 + Math.min(0.6, Math.abs(z))
-                  );
-
-                  const landmarkMaterial = new THREE.MeshPhongMaterial({
-                    color: depthColor,
-                    shininess: 80,
-                  });
-
-                  const landmarkGeometry = new THREE.SphereGeometry(
-                    size,
-                    16,
-                    16
-                  );
-                  const landmark = new THREE.Mesh(
-                    landmarkGeometry,
-                    landmarkMaterial
-                  );
-
-                  // Better positioning
-                  landmark.position.set(
-                    -lm.x * 0.8,
-                    -lm.y * 0.8,
-                    z * 0.5 // Scale z for better visibility
-                  );
-
-                  scene.add(landmark);
-                  landmarkObjects.push(landmark);
-                });
-              }
-
-              // Smooth rotation
-              scene.rotation.y += 0.005;
-              scene.rotation.x += 0.002;
-
-              renderer.render(scene, camera);
-              gl.endFrameEXP();
-            };
-
-            animate();
-          }}
+      <View style={styles.controlBar}>
+        <Button
+          title={isRecording ? "Capturing..." : "Capture Frames (30s)"}
+          onPress={handleCaptureFrames}
+          disabled={isRecording}
         />
       </View>
+      {/* Status Overlay and Visualization Panel can be updated to show video/landmark results */}
+      {/* ...existing code for overlays and visualization... */}
     </View>
   );
 }
@@ -273,7 +177,7 @@ const styles = StyleSheet.create({
   },
   controlBar: {
     position: "absolute",
-    bottom: 30,
+    bottom: 90, // Moved higher above the tab bar
     left: 20,
     right: 20,
     backgroundColor: "rgba(30,30,30,0.7)",
