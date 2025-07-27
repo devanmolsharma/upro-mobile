@@ -40,15 +40,15 @@ export default function CameraFeed() {
 
         const photo = await camera.takePictureAsync({
           // quality: 0.1,
+          base64: true,
           skipProcessing: true,
           imageType: "jpg",
-          shutterSound: false,
         });
 
-        if (photo.uri) {
+        if (photo.base64) {
           if (!landmarkDetector.current) return;
           const detected = await landmarkDetector.current.detectLandmarks(
-            photo.uri
+            photo.base64
           );
           // console.log("Detected landmarks:", detected);
 
@@ -61,7 +61,7 @@ export default function CameraFeed() {
       } catch (err) {
         console.error("Error during frame processing:", err);
       }
-    }, 100);
+    }, 10);
 
     return () => clearInterval(interval);
   }, [cameraReady]);
@@ -191,6 +191,10 @@ export default function CameraFeed() {
                   landmarkObjects.push(landmark);
                 });
               }
+
+              // Smooth rotation
+              scene.rotation.y += 0.005;
+              scene.rotation.x += 0.002;
 
               renderer.render(scene, camera);
               gl.endFrameEXP();
