@@ -9,16 +9,27 @@ import { Landmark, Strategy } from "./Strategy";
 export class MobileStrategy extends Strategy {
   private detector: poseDetection.PoseDetector | null = null;
 
-  async parseImage(imageBase64Url: string): Promise<tf.Tensor3D | null> {
-    console.log("Parsing image on Mobile");
+  async parseImage(imageBase64: string): Promise<tf.Tensor3D | null> {
     try {
-      const res = await fetch(imageBase64Url);
-      const arrayBuffer = await res.arrayBuffer();
-      const imageData = new Uint8Array(arrayBuffer);
-      const imageTensor = decodeJpeg(imageData);
+      // Convert base64 to byte array
+      const byteCharacters = atob(imageBase64); // Replace with custom atob if in React Native
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+
+      // Decode JPEG to tensor
+      let imageTensor = decodeJpeg(byteArray); // shape: [H, W, 3]
+
+      // Resize to smaller resolution
+      const targetHeight = 192;
+      const targetWidth = 192;
+      imageTensor = tf.image.resizeBilinear(imageTensor, [targetHeight, targetWidth]);
+
       return imageTensor;
-    } catch (error) {
-      console.error("Error parsing image on Mobile:", error);
+    } catch (err) {
+      console.error('Error decoding image tensor:', err);
       return null;
     }
   }
