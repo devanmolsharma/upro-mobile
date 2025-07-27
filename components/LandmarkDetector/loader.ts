@@ -25,9 +25,9 @@ export class LandmarkDetector {
     }
   }
 
-  async detectLandmarks(imageBase64Url: string, fileUri: string) {
+  async detectLandmarks(fileUri: string) {
     try {
-      const imageData = await this.strategy.parseImage(imageBase64Url, fileUri);
+      const imageData = await this.strategy.parseImage(fileUri);
       if (!imageData) {
         throw new Error("Failed to parse image data");
       }

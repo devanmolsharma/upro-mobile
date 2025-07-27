@@ -1,107 +1,176 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
+import * as FileSystem from "expo-file-system";
+import * as VideoThumbnails from "expo-video-thumbnails";
 import { useEffect, useRef, useState } from "react";
 import {
-  Button,
+  ActivityIndicator,
   StyleSheet,
   Text,
-  View
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { LandmarkDetector } from "./LandmarkDetector/loader";
 import { Landmark } from "./LandmarkDetector/strategies/Strategy";
-// If you use react-native-video-processing, import it:
-// import { ProcessingManager } from 'react-native-video-processing';
 
-export default function CameraFeed() {
+export default function CameraFeed({
+  onLandmarksDetected,
+}: {
+  onLandmarksDetected?: (
+    landmarkInfo: { timeFromStart: number; landmarks: Landmark[] }[]
+  ) => void;
+}) {
   const [permission, requestPermission] = useCameraPermissions();
-  const [landmarks, setLandmarks] = useState<Landmark[]>([]);
-  const landmarkObjectsRef = useRef<Landmark[]>([]);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const cameraRef = useRef<CameraView>(null);
   const landmarkDetector = useRef<LandmarkDetector | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [videoUri, setVideoUri] = useState<string | null>(null);
+  const [processingProgress, setProcessingProgress] = useState(0);
+  const finalLandmarks = useRef<
+    {
+      timeFromStart: number;
+      landmarks: Landmark[];
+    }[]
+  >([]); // Store final landmarks from all frames
+  const [modelLoaded, setModelLoaded] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
+  const recordDuration = 30; // seconds
+  const [now, setNow] = useState(Date.now());
+  const [recordingStartTime, setRecordingStartTime] = useState(Date.now());
 
-  // Load the ML model once
   useEffect(() => {
-    landmarkDetector.current = new LandmarkDetector();
-    landmarkDetector.current.loadModel().catch((error) => {
-      console.error("Error loading model:", error);
-    });
+    const interval = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
   }, []);
 
-  // Log isRecording state changes
+  // Update recording start time when recording starts
   useEffect(() => {
-    console.log('isRecording changed:', isRecording);
+    if (isRecording) {
+      setRecordingStartTime(Date.now());
+    }
   }, [isRecording]);
 
-  // Frame processing queue
-  const frameQueue = useRef<any[]>([]);
-  const processingActive = useRef(false);
-
-  // Function to start processing queue
-  const startProcessingQueue = async () => {
-    if (processingActive.current) return;
-    processingActive.current = true;
-    while (processingActive.current) {
-      if (frameQueue.current.length === 0) {
-        // Wait for next frame
-        await new Promise((resolve) => setTimeout(resolve, 50));
-        continue;
-      }
-      const photo = frameQueue.current.shift();
+  // Load the ML model
+  useEffect(() => {
+    const loadModel = async () => {
       try {
-        if (landmarkDetector.current) {
-          const landmarks = await landmarkDetector.current.detectLandmarks(photo.base64, photo.uri);
-          console.log(`Processed frame:`, landmarks);
-        }
-      } catch (err) {
-        console.error("Error processing frame:", err);
+        setStatusMessage("Loading AI model...");
+        landmarkDetector.current = new LandmarkDetector();
+        await landmarkDetector.current.loadModel();
+        setModelLoaded(true);
+        setStatusMessage("");
+      } catch (error) {
+        console.error("Error loading model:", error);
+        setStatusMessage("Failed to load AI model. Restart the app.");
       }
+    };
+
+    loadModel();
+  }, []);
+
+  const handleRecordVideo = async () => {
+    if (!cameraRef.current || !cameraReady || isRecording) return;
+
+    try {
+      setIsRecording(true);
+      setStatusMessage("Recording... (0:30)");
+
+      const res = await cameraRef.current.recordAsync({
+        maxDuration: recordDuration,
+      });
+
+      if (!res?.uri) {
+        setStatusMessage("Recording failed. Try again.");
+        return;
+      }
+      setIsRecording(false);
+      processVideoFrames(res.uri);
+    } catch (error) {
+      console.error("Recording failed:", error);
+      setStatusMessage("Recording error. Try again.");
+    } finally {
+      setIsRecording(false);
     }
   };
 
-  // Function to capture frames for 30 seconds at 2 fps
-  const handleCaptureFrames = async () => {
-    if (!cameraRef.current || !cameraReady) return;
-    setIsRecording(true);
-    frameQueue.current = [];
-    processingActive.current = false;
-    startProcessingQueue();
-    let elapsed = 0;
-    const intervalMs = 500;
-    const durationMs = 30000;
-    const maxFrames = Math.floor(durationMs / intervalMs);
-    let framesCaptured = 0;
+  const processVideoFrames = async (videoUri: string) => {
+    setIsProcessing(true);
+    setProcessingProgress(0);
 
-    const intervalId = setInterval(async () => {
-      if (!cameraRef.current) return;
-      try {
-        const photo = await cameraRef.current.takePictureAsync({ base64: true, skipProcessing: true });
-        frameQueue.current.push(photo);
-        framesCaptured++;
-        console.log(`Captured frame ${framesCaptured}`);
-      } catch (err) {
-        console.error("Error capturing frame:", err);
+    try {
+      const frameDir = `${FileSystem.cacheDirectory}video_frames/`;
+      await FileSystem.deleteAsync(frameDir, { idempotent: true });
+      await FileSystem.makeDirectoryAsync(frameDir, { intermediates: true });
+
+      const durationMs = recordDuration * 1000;
+      const fps = 2; // Process 2 frames per second
+      const interval = 1000 / fps;
+      const totalFrames = Math.floor(durationMs / interval);
+
+      for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
+        const time = frameIndex * interval;
+        try {
+          const { uri } = await VideoThumbnails.getThumbnailAsync(videoUri, {
+            time,
+          });
+          const newUri = `${frameDir}frame_${String(frameIndex).padStart(3, "0")}.jpg`;
+          await FileSystem.moveAsync({ from: uri, to: newUri });
+
+          if (landmarkDetector.current) {
+            const landmarks =
+              await landmarkDetector.current.detectLandmarks(newUri);
+            if (landmarks && landmarks.length > 0) {
+              finalLandmarks.current.push({
+                timeFromStart: frameIndex * interval,
+                landmarks,
+              });
+            }
+          }
+
+          const progress = Math.floor(((frameIndex + 1) / totalFrames) * 100);
+          setProcessingProgress(progress);
+          setStatusMessage(`Processing... ${progress}%`);
+        } catch (e) {
+          console.warn(`Frame error:`, e);
+        }
       }
-      elapsed += intervalMs;
-      if (framesCaptured >= maxFrames) {
-        clearInterval(intervalId);
-        setIsRecording(false);
-        // Stop processing after all frames are captured and processed
-        setTimeout(() => { processingActive.current = false; }, 2000);
-      }
-    }, intervalMs);
+
+      setStatusMessage("Analysis complete!");
+      setTimeout(() => setStatusMessage(""), 2000);
+    } catch (error) {
+      console.error("Processing failed:", error);
+      setStatusMessage("Processing failed. Try again.");
+    } finally {
+      setIsProcessing(false);
+      onLandmarksDetected?.(finalLandmarks.current);
+      finalLandmarks.current = []; // Reset for next recording
+    }
   };
 
-  // Permissions flow
-  if (!permission) return <View />;
+  // Permission states
+  if (!permission) {
+    return (
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color="#fff" />
+      </View>
+    );
+  }
+
   if (!permission.granted) {
     return (
-      <View style={styles.container}>
+      <View style={styles.centerContainer}>
+        <Text style={styles.title}>Camera Permission Required</Text>
         <Text style={styles.message}>
-          We need your permission to show the camera
+          We need access to your camera to analyze movements
         </Text>
-        <Button onPress={requestPermission} title="Grant Permission" />
+        <TouchableOpacity
+          style={styles.permissionButton}
+          onPress={requestPermission}
+        >
+          <Text style={styles.buttonText}>Allow Camera Access</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -110,19 +179,56 @@ export default function CameraFeed() {
     <View style={styles.container}>
       <CameraView
         style={styles.camera}
+        flash="off"
         facing="front"
+        mode="video"
+        mute={true}
         ref={cameraRef}
         onCameraReady={() => setCameraReady(true)}
       />
-      <View style={styles.controlBar}>
-        <Button
-          title={isRecording ? "Capturing..." : "Capture Frames (30s)"}
-          onPress={handleCaptureFrames}
-          disabled={isRecording}
-        />
+
+      {/* Status overlay */}
+      <View style={styles.statusOverlay}>
+        {statusMessage ? (
+          <View style={styles.statusBubble}>
+            <Text style={styles.statusText}>{statusMessage}</Text>
+          </View>
+        ) : null}
       </View>
-      {/* Status Overlay and Visualization Panel can be updated to show video/landmark results */}
-      {/* ...existing code for overlays and visualization... */}
+
+      {/* Control bar */}
+      <View style={styles.controlBar}>
+        <TouchableOpacity
+          style={[
+            styles.recordButton,
+            isRecording && styles.recordingButton,
+            (isProcessing || !modelLoaded) && styles.disabledButton,
+          ]}
+          onPress={handleRecordVideo}
+          disabled={isProcessing || !modelLoaded}
+        >
+          {isProcessing ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Text style={styles.recordButtonText}>
+              {isRecording ? "STOP" : "RECORD"}
+            </Text>
+          )}
+        </TouchableOpacity>
+
+        <View style={styles.infoContainer}>
+          <Text style={styles.durationText}>
+            {isRecording
+              ? `00:${Math.max(Math.floor((now - recordingStartTime) / 1000), 0)
+                  .toString()
+                  .padStart(2, "0")}`
+              : "00:30"}
+          </Text>
+          <Text style={styles.infoText}>
+            {modelLoaded ? "Ready to record" : "Loading AI model..."}
+          </Text>
+        </View>
+      </View>
     </View>
   );
 }
@@ -132,76 +238,105 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#000",
   },
-  camera: {
+  centerContainer: {
     flex: 1,
-  },
-  statusBar: {
-    position: "absolute",
-    top: 50,
-    left: 0,
-    right: 0,
+    justifyContent: "center",
     alignItems: "center",
-    padding: 10,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: "#121212",
+    padding: 20,
   },
-  loadingContainer: {
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  loadingText: {
-    color: "white",
-    fontSize: 16,
-    marginTop: 8,
-  },
-  landmarkCount: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  visualizationPanel: {
-    position: "absolute",
-    bottom: 80,
-    right: 20,
-    width: 320,
-    height: 320,
-    backgroundColor: "rgba(30,30,30,0.7)",
-    borderRadius: 12,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "rgba(100,100,100,0.3)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-  },
-  panelTitle: {
-    position: "absolute",
-    top: 8,
-    left: 0,
-    right: 0,
-    textAlign: "center",
-    color: "rgba(255,255,255,0.8)",
-    fontSize: 12,
-    fontWeight: "700",
-    zIndex: 10,
-  },
-  glView: {
+  camera: {
     flex: 1,
   },
   controlBar: {
     position: "absolute",
-    bottom: 90, // Moved higher above the tab bar
+    bottom: 40,
     left: 20,
     right: 20,
-    backgroundColor: "rgba(30,30,30,0.7)",
+    backgroundColor: "rgba(30,30,30,0.8)",
     borderRadius: 25,
-    paddingVertical: 8,
+    padding: 15,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  recordButton: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: "#ff3b30",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 3,
+    borderColor: "rgba(255,255,255,0.2)",
+  },
+  recordingButton: {
+    backgroundColor: "#4A4A4A",
+    borderRadius: 10,
+    width: 60,
+    height: 60,
+  },
+  disabledButton: {
+    backgroundColor: "#555",
+  },
+  recordButtonText: {
+    color: "white",
+    fontWeight: "bold",
+    fontSize: 16,
+  },
+  infoContainer: {
+    flex: 1,
+    marginLeft: 20,
+  },
+  durationText: {
+    color: "white",
+    fontSize: 24,
+    fontWeight: "bold",
+  },
+  infoText: {
+    color: "#aaa",
+    fontSize: 14,
+  },
+  statusOverlay: {
+    position: "absolute",
+    top: 60,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+  },
+  statusBubble: {
+    backgroundColor: "rgba(0,0,0,0.7)",
+    borderRadius: 20,
+    paddingVertical: 10,
     paddingHorizontal: 20,
   },
+  statusText: {
+    color: "white",
+    fontSize: 16,
+  },
+  permissionButton: {
+    backgroundColor: "#4a86e8",
+    paddingVertical: 15,
+    paddingHorizontal: 30,
+    borderRadius: 30,
+    marginTop: 30,
+  },
+  buttonText: {
+    color: "white",
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  title: {
+    color: "white",
+    fontSize: 24,
+    fontWeight: "bold",
+    marginBottom: 15,
+    textAlign: "center",
+  },
   message: {
-    color: "#fff",
+    color: "#ddd",
     fontSize: 16,
     textAlign: "center",
-    marginBottom: 20,
+    lineHeight: 24,
   },
 });

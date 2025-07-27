@@ -10,10 +10,7 @@ import { Landmark, Strategy } from "./Strategy";
 export class MobileStrategy extends Strategy {
   private detector: poseDetection.PoseDetector | null = null;
 
-  async parseImage(
-    imageBase64: string,
-    fileUri: string
-  ): Promise<tf.Tensor3D | null> {
+  async parseImage(fileUri: string): Promise<tf.Tensor3D | null> {
     try {
       const result = await ImageManipulator.manipulateAsync(
         fileUri,

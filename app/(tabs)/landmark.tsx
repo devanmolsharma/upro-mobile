@@ -8,5 +8,5 @@ export default function LandmarkScreen() {
   //   return <AuthScreen />;
   // }
 
-  return <CameraFeed />;
+  return <CameraFeed onLandmarksDetected={console.log} />;
 }

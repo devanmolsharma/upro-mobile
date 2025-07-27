@@ -8,10 +8,7 @@ export abstract class Strategy {
    * @param imageBase64Url The base64 encoded image string.
    * @returns A Promise that resolves with a 3D Tensor representing the image, or null on failure.
    */
-  abstract parseImage(
-    imageBase64Url: string,
-    fileUri: string
-  ): Promise<tf.Tensor3D | null>;
+  abstract parseImage(fileUri: string): Promise<tf.Tensor3D | null>;
 
   /**
    * Loads the BlazePose model detector.
