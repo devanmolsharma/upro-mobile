@@ -34,51 +34,64 @@ export default function CameraFeed() {
     console.log('isRecording changed:', isRecording);
   }, [isRecording]);
 
+  // Frame processing queue
+  const frameQueue = useRef<any[]>([]);
+  const processingActive = useRef(false);
+
+  // Function to start processing queue
+  const startProcessingQueue = async () => {
+    if (processingActive.current) return;
+    processingActive.current = true;
+    while (processingActive.current) {
+      if (frameQueue.current.length === 0) {
+        // Wait for next frame
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        continue;
+      }
+      const photo = frameQueue.current.shift();
+      try {
+        if (landmarkDetector.current) {
+          const landmarks = await landmarkDetector.current.detectLandmarks(photo.base64, photo.uri);
+          console.log(`Processed frame:`, landmarks);
+        }
+      } catch (err) {
+        console.error("Error processing frame:", err);
+      }
+    }
+  };
+
   // Function to capture frames for 30 seconds at 2 fps
   const handleCaptureFrames = async () => {
     if (!cameraRef.current || !cameraReady) return;
     setIsRecording(true);
-    const frames: any[] = [];
+    frameQueue.current = [];
+    processingActive.current = false;
+    startProcessingQueue();
     let elapsed = 0;
     const intervalMs = 500;
     const durationMs = 30000;
     const maxFrames = Math.floor(durationMs / intervalMs);
+    let framesCaptured = 0;
 
     const intervalId = setInterval(async () => {
       if (!cameraRef.current) return;
       try {
         const photo = await cameraRef.current.takePictureAsync({ base64: true, skipProcessing: true });
-        frames.push(photo);
-        console.log(`Captured frame ${frames.length}`);
+        frameQueue.current.push(photo);
+        framesCaptured++;
+        console.log(`Captured frame ${framesCaptured}`);
       } catch (err) {
         console.error("Error capturing frame:", err);
       }
       elapsed += intervalMs;
-      if (frames.length >= maxFrames) {
+      if (framesCaptured >= maxFrames) {
         clearInterval(intervalId);
         setIsRecording(false);
-        await processFrames(frames);
+        // Stop processing after all frames are captured and processed
+        setTimeout(() => { processingActive.current = false; }, 2000);
       }
     }, intervalMs);
   };
-
-  // Function to process frames
-  async function processFrames(frames: any[]) {
-    if (!landmarkDetector.current) {
-      console.error("LandmarkDetector not loaded");
-      return;
-    }
-    for (let i = 0; i < frames.length; i++) {
-      const photo = frames[i];
-      try {
-        const landmarks = await landmarkDetector.current.detectLandmarks(photo.base64, photo.uri);
-        console.log(`Frame ${i + 1}:`, landmarks);
-      } catch (err) {
-        console.error(`Error processing frame ${i + 1}:`, err);
-      }
-    }
-    console.log("Finished processing all frames.");
-  }
 
   // Permissions flow
   if (!permission) return <View />;
