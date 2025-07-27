@@ -31,11 +31,14 @@ export class LandmarkDetector {
       if (!imageData) {
         throw new Error("Failed to parse image data");
       }
-      const landmarks = await this.strategy.detectLandmarks(imageData, 0.4);
+      const landmarks = await this.strategy.detectLandmarks(imageData, 0);
       return landmarks;
     } catch (error) {
       console.error("Error detecting landmarks:", error);
       throw error;
     }
+  }
+  dispose() {
+    return this.strategy.dispose();
   }
 }

@@ -5,6 +5,12 @@ import { decodeJpeg } from "@tensorflow/tfjs-react-native";
 import { Landmark, Strategy } from "./Strategy";
 
 export class WebStrategy extends Strategy {
+  dispose(): Promise<void> {
+    if (this.detector) {
+      this.detector.dispose();
+    }
+    return Promise.resolve();
+  }
   private detector: poseDetection.PoseDetector | null = null;
 
   async parseImage(imageBase64Url: string): Promise<tf.Tensor3D | null> {
@@ -49,13 +55,19 @@ export class WebStrategy extends Strategy {
       );
       console.log("Pose detector loaded successfully for Web");
     } catch (error) {
-      console.error("Error setting backend or loading pose detector for Web:", error);
+      console.error(
+        "Error setting backend or loading pose detector for Web:",
+        error
+      );
       await tf.setBackend("cpu");
       throw error;
     }
   }
 
-  async detectLandmarks(imageTensor: tf.Tensor3D, conf: number): Promise<Landmark[]> {
+  async detectLandmarks(
+    imageTensor: tf.Tensor3D,
+    conf: number
+  ): Promise<Landmark[]> {
     if (!this.detector) {
       throw new Error("Pose detector not loaded");
     }

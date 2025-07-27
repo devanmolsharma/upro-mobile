@@ -16,7 +16,8 @@ export default function CameraFeed({
   onLandmarksDetected,
 }: {
   onLandmarksDetected?: (
-    landmarkInfo: { timeFromStart: number; landmarks: Landmark[] }[]
+    landmarkInfo: { timeFromStart: number; landmarks: Landmark[] }[],
+    recordedVideoUri: string
   ) => void;
 }) {
   const [permission, requestPermission] = useCameraPermissions();
@@ -34,7 +35,7 @@ export default function CameraFeed({
   >([]); // Store final landmarks from all frames
   const [modelLoaded, setModelLoaded] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
-  const recordDuration = 30; // seconds
+  const recordDuration = 5; // seconds
   const [now, setNow] = useState(Date.now());
   const [recordingStartTime, setRecordingStartTime] = useState(Date.now());
 
@@ -68,6 +69,12 @@ export default function CameraFeed({
     };
 
     loadModel();
+    return () => {
+      if (landmarkDetector.current) {
+        landmarkDetector.current.dispose();
+        landmarkDetector.current = null;
+      }
+    };
   }, []);
 
   const handleRecordVideo = async () => {
@@ -105,7 +112,7 @@ export default function CameraFeed({
       await FileSystem.makeDirectoryAsync(frameDir, { intermediates: true });
 
       const durationMs = recordDuration * 1000;
-      const fps = 2; // Process 2 frames per second
+      const fps = 10; // Process 2 frames per second
       const interval = 1000 / fps;
       const totalFrames = Math.floor(durationMs / interval);
 
@@ -113,6 +120,7 @@ export default function CameraFeed({
         const time = frameIndex * interval;
         try {
           const { uri } = await VideoThumbnails.getThumbnailAsync(videoUri, {
+            quality: 1,
             time,
           });
           const newUri = `${frameDir}frame_${String(frameIndex).padStart(3, "0")}.jpg`;
@@ -144,7 +152,7 @@ export default function CameraFeed({
       setStatusMessage("Processing failed. Try again.");
     } finally {
       setIsProcessing(false);
-      onLandmarksDetected?.(finalLandmarks.current);
+      onLandmarksDetected?.(finalLandmarks.current, videoUri);
       finalLandmarks.current = []; // Reset for next recording
     }
   };
